@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "kruschewskyjoao95.muse-usage",
+  "name": "Muse Usage",
+  "version": "1.0.0",
+  "author": "kruschewskyjoao95",
+  "license": "MIT",
+  "description": "Muse Code subscription usage in the Omarchy bar: the 5-hour window and the weekly allowance, with reset times on hover.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Muse Usage",
+    "description": "Shows Muse 5-hour and weekly subscription usage with reset times.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

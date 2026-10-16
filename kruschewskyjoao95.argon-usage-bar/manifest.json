@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "kruschewskyjoao95.argon-usage-bar",
+  "name": "Argon Usage Bar",
+  "version": "1.0.0",
+  "author": "kruschewskyjoao95",
+  "license": "MIT",
+  "description": "Gemini 4 Argon weekly usage in the Omarchy bar: days to weekly reset and weekly percent.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Argon Usage Bar",
+    "description": "Gemini 4 Argon weekly usage in one compact bar label.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

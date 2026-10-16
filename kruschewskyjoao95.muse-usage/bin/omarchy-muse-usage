@@ -1,0 +1,243 @@
+#!/usr/bin/python3
+# omarchy:summary=Print the Muse subscription usage record as JSON
+# omarchy:args=[--force] [--max-age <seconds>]
+# omarchy:hidden=true
+"""Collect Muse subscription usage (5-hour window and weekly) for Omarchy.
+
+Muse only observes its subscription usage while it serves a model turn, and
+it does not persist that observation. So a refresh that cannot be served from
+cache runs one minimal turn through `muse serve` (MSP over stdio) and reads
+the `usage/changed` notification it produces. The cache keeps that cost
+bounded: by default a record is reused for 30 minutes, unless one of its
+windows has already reset, since its percentages are then out of date.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import select
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+MUSE_BIN = os.environ.get("MUSE_BIN") or str(Path.home() / ".local/bin/muse")
+CACHE_FILE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "omarchy" / "muse-usage.json"
+DEFAULT_MAX_AGE = 1800
+LIVE_TIMEOUT = 150
+
+
+def uuid7() -> str:
+    # MSP requires UUIDv7 command ids; the stdlib only gained uuid7 recently.
+    ms = int(time.time() * 1000)
+    raw = bytearray(ms.to_bytes(6, "big") + os.urandom(10))
+    raw[6] = (raw[6] & 0x0F) | 0x70
+    raw[8] = (raw[8] & 0x3F) | 0x80
+    h = raw.hex()
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
+
+
+def iso_from_ms(value: Any) -> str:
+    if not isinstance(value, (int, float)):
+        return ""
+    return dt.datetime.fromtimestamp(value / 1000, dt.timezone.utc).isoformat()
+
+
+class Msp:
+    """Line-delimited JSON-RPC client for `muse serve`."""
+
+    def __init__(self) -> None:
+        self.proc = subprocess.Popen(
+            [MUSE_BIN, "serve"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        self.buffer = b""
+
+    def send(self, message: dict[str, Any]) -> None:
+        self.proc.stdin.write((json.dumps(message) + "\n").encode())
+        self.proc.stdin.flush()
+
+    def read(self, deadline: float) -> dict[str, Any] | None:
+        while True:
+            if b"\n" in self.buffer:
+                line, self.buffer = self.buffer.split(b"\n", 1)
+                if line.strip():
+                    return json.loads(line)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            ready, _, _ = select.select([self.proc.stdout], [], [], remaining)
+            if not ready:
+                return None
+            chunk = os.read(self.proc.stdout.fileno(), 65536)
+            if not chunk:
+                return None
+            self.buffer += chunk
+
+    def request(self, rid: int, method: str, params: dict[str, Any], deadline: float, notes: dict[str, Any]) -> dict[str, Any]:
+        self.send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        while True:
+            message = self.read(deadline)
+            if message is None:
+                raise TimeoutError(f"{method} timed out")
+            if message.get("id") == rid:
+                if "error" in message:
+                    raise RuntimeError(f"{method}: {message['error'].get('message', 'failed')}")
+                return message.get("result") or {}
+            note(message, notes)
+
+    def close(self) -> None:
+        self.proc.kill()
+        self.proc.wait()
+
+
+def note(message: dict[str, Any], notes: dict[str, Any]) -> None:
+    method = message.get("method")
+    if method == "usage/changed":
+        params = message.get("params") or {}
+        notes["usage"] = params.get("usage", params)
+    elif method == "turn/completed":
+        notes["done"] = True
+
+
+def fetch_live() -> dict[str, Any]:
+    """Run one minimal turn and return the observed SubscriptionUsage."""
+    deadline = time.monotonic() + LIVE_TIMEOUT
+    msp = Msp()
+    notes: dict[str, Any] = {}
+    try:
+        msp.request(1, "initialize", {"clientInfo": {"name": "omarchy_muse_usage", "version": "1.0.0"}}, deadline, notes)
+        msp.send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+
+        session = msp.request(2, "session/start", {"commandId": uuid7()}, deadline, notes).get("session", {})
+        session_id = session.get("id") or session.get("sessionId")
+        msp.request(
+            3,
+            "turn/start",
+            {
+                "commandId": uuid7(),
+                "sessionId": session_id,
+                "reasoningEffort": "minimal",
+                "input": [{"type": "text", "text": "ok"}],
+            },
+            deadline,
+            notes,
+        )
+
+        while "usage" not in notes and not notes.get("done"):
+            message = msp.read(deadline)
+            if message is None:
+                break
+            note(message, notes)
+
+        if "usage" not in notes:
+            result = msp.request(4, "usage/read", {}, deadline, notes)
+            if result.get("usage"):
+                notes["usage"] = result["usage"]
+    finally:
+        msp.close()
+
+    if "usage" not in notes:
+        raise RuntimeError("Muse did not report subscription usage for this account")
+    return notes["usage"]
+
+
+def build_record(usage: dict[str, Any] | None, error: str = "") -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "schemaVersion": 1,
+        "id": "muse",
+        "name": "Muse",
+        "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "ready": usage is not None,
+        "tierLabel": "",
+        "limits": [],
+    }
+    if error:
+        record["error"] = error
+    if usage is None:
+        return record
+
+    window = usage.get("window", {})
+    weekly = usage.get("weekly", {})
+    record["tierLabel"] = str(usage.get("tier", ""))
+    record["observedAt"] = iso_from_ms(usage.get("observedAtMs"))
+    record["window"] = {
+        "usedPercent": window.get("usedPercent", 0),
+        "resetsAt": iso_from_ms(window.get("resetsAtMs")),
+        "durationMins": window.get("windowDurationMins", 0),
+    }
+    record["weekly"] = {
+        "usedPercent": weekly.get("usedPercent", 0),
+        "resetsAt": iso_from_ms(weekly.get("resetsAtMs")),
+    }
+    # Same limit shape the agents panel reads from the Claude and Codex collectors.
+    record["limits"] = [
+        {"label": "Session (5-hour)", "percent": record["window"]["usedPercent"], "resetsAt": record["window"]["resetsAt"]},
+        {"label": "Weekly (7-day)", "percent": record["weekly"]["usedPercent"], "resetsAt": record["weekly"]["resetsAt"]},
+    ]
+    return record
+
+
+def cache_is_usable(cache: dict[str, Any], max_age: float, now_ms: float) -> bool:
+    fetched_at = cache.get("fetchedAtMs", 0)
+    if now_ms - fetched_at > max_age * 1000:
+        return False
+    usage = cache.get("usage") or {}
+    # A window that has already reset no longer describes the current block.
+    for block in (usage.get("window", {}), usage.get("weekly", {})):
+        resets_at = block.get("resetsAtMs")
+        if not isinstance(resets_at, (int, float)) or resets_at <= now_ms:
+            return False
+    return True
+
+
+def read_cache() -> dict[str, Any] | None:
+    try:
+        return json.loads(CACHE_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def write_cache(usage: dict[str, Any]) -> None:
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CACHE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"fetchedAtMs": round(time.time() * 1000), "usage": usage}))
+    tmp.replace(CACHE_FILE)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Muse usage collector for Omarchy")
+    parser.add_argument("--force", action="store_true", help="ignore the cache and run a fresh turn")
+    parser.add_argument("--max-age", type=float, default=DEFAULT_MAX_AGE, help="seconds a cached record stays valid")
+    args = parser.parse_args()
+
+    now_ms = time.time() * 1000
+    cache = read_cache()
+    if not args.force and cache and cache_is_usable(cache, args.max_age, now_ms):
+        print(json.dumps(build_record(cache["usage"]), separators=(",", ":")))
+        return 0
+
+    try:
+        usage = fetch_live()
+    except (OSError, RuntimeError, TimeoutError, ValueError) as error:
+        # Keep showing the last good numbers, but say they are not current.
+        if cache and cache.get("usage"):
+            record = build_record(cache["usage"], error=f"Showing last known usage: {error}")
+        else:
+            record = build_record(None, error=str(error))
+        print(json.dumps(record, separators=(",", ":")))
+        return 0
+
+    write_cache(usage)
+    print(json.dumps(build_record(usage), separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

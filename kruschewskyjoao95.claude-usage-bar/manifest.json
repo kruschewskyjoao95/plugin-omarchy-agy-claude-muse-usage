@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "kruschewskyjoao95.claude-usage-bar",
+  "name": "Claude Usage Bar",
+  "version": "1.0.0",
+  "author": "kruschewskyjoao95",
+  "license": "MIT",
+  "description": "Claude Code usage in the Omarchy bar: 5-hour percent | days to weekly reset and weekly percent.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "Claude Usage Bar",
+    "description": "Claude 5-hour and weekly usage in one compact bar label.",
+    "category": "AI",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
