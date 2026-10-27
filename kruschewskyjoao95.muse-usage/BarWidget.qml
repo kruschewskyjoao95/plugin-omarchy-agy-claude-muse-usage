@@ -4,10 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// kruschewskyjoao95.muse-usage bar widget: Muse 5-hour and weekly usage.
-// The collector caches its last live reading, so the poll below is cheap.
-// A live Muse turn only runs once that cache is older than 30 minutes, a
-// window has reset, or the user right-clicks to force a refresh.
+// Codex 5-hour and weekly usage, read from Omarchy's local usage record.
 BarWidget {
   id: root
   moduleName: "kruschewskyjoao95.muse-usage"
@@ -18,14 +15,18 @@ BarWidget {
   // Bumped once a minute so the "resets in" text in the tooltip stays current.
   property int nowTick: 0
 
-  readonly property string helperPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/kruschewskyjoao95.muse-usage/bin/omarchy-muse-usage"
-  readonly property int pollMs: 3600000
+  readonly property string recordPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") || "") + "/.local/state") + "/omarchy/agents/usage/codex.json"
+  readonly property int pollMs: 180000
 
-  function windowPercent() { return root.record && root.record.window ? root.record.window.usedPercent : null }
-  function weeklyPercent() { return root.record && root.record.weekly ? root.record.weekly.usedPercent : null }
+  function limit(index) {
+    var entry = root.record && root.record.limits ? root.record.limits[index] : null
+    return entry ? { percent: entry.percent * 100, resetsAt: entry.resetsAt } : null
+  }
+  function windowPercent() { var value = limit(0); return value ? value.percent : null }
+  function weeklyPercent() { var value = limit(1); return value ? value.percent : null }
 
   function fmtPct(value) {
-    return value === null || value === undefined ? "--" : value + "%"
+    return value === null || value === undefined ? "--" : Number(value).toFixed(1) + "%"
   }
 
   function untilText(iso) {
@@ -46,10 +47,8 @@ BarWidget {
 
   // Percent and reset time for each window, read by the popup panel.
   readonly property color accentColor: "#0071f1"
-  readonly property var sessionUsage: root.record && root.record.window
-    ? { percent: root.record.window.usedPercent, resetsAt: root.record.window.resetsAt } : null
-  readonly property var weeklyUsage: root.record && root.record.weekly
-    ? { percent: root.record.weekly.usedPercent, resetsAt: root.record.weekly.resetsAt } : null
+  readonly property var sessionUsage: limit(0)
+  readonly property var weeklyUsage: limit(1)
 
   // Time left until a reset, e.g. "4h 05m" or "3d 04h" (the popup shows it).
   function leftText(iso) {
@@ -84,21 +83,18 @@ BarWidget {
 
   function barText() {
     if (root.vertical) return ""
-    if (!root.record) return root.busy ? " Muse ..." : " Muse --"
-    return " Muse " + fmtPct(windowPercent()) + " | 7d " + fmtPct(weeklyPercent())
+    if (!root.record) return root.busy ? "Codex ..." : "Codex --"
+    return "Codex " + fmtPct(windowPercent()) + " | 7d " + fmtPct(weeklyPercent())
   }
 
   function tooltipText() {
-    if (!root.record) return root.errorText || "Muse usage not loaded yet"
+    if (!root.record) return root.errorText || "Codex usage not loaded yet"
     var lines = []
-    if (root.record.window)
-      lines.push("5-hour  " + fmtPct(windowPercent()) + "  resets " + clockText(root.record.window.resetsAt)
-        + " (" + untilText(root.record.window.resetsAt) + ")")
-    if (root.record.weekly)
-      lines.push("Weekly  " + fmtPct(weeklyPercent()) + "  resets " + clockText(root.record.weekly.resetsAt)
-        + " (" + untilText(root.record.weekly.resetsAt) + ")")
+    var session = limit(0), weekly = limit(1)
+    if (session) lines.push("5-hour  " + fmtPct(session.percent) + "  resets " + clockText(session.resetsAt) + " (" + untilText(session.resetsAt) + ")")
+    if (weekly) lines.push("Weekly  " + fmtPct(weekly.percent) + "  resets " + clockText(weekly.resetsAt) + " (" + untilText(weekly.resetsAt) + ")")
     if (root.errorText) lines.push(root.errorText)
-    lines.push("Right-click: refresh now (runs one Muse turn)")
+    lines.push("Right-click: refresh now")
     return lines.join("\n")
   }
 
@@ -110,21 +106,31 @@ BarWidget {
       parsed = JSON.parse(raw)
     } catch (error) {
       root.record = null
-      root.errorText = "Muse collector returned invalid JSON"
+      root.errorText = "Codex usage record returned invalid JSON"
       return
     }
     root.record = parsed.ready ? parsed : null
-    root.errorText = parsed.error || ""
+    root.errorText = parsed.usageStatusText || ""
   }
 
   function refresh(force) {
     if (refreshProc.running) return
     root.busy = true
-    refreshProc.command = force ? [root.helperPath, "--force"] : [root.helperPath, "--max-age", "3600"]
+    refreshProc.command = force ? ["omarchy-agent-usage-update", "--force", "codex"] : ["omarchy-agent-usage-update", "codex"]
     refreshProc.running = true
   }
 
   Component.onCompleted: refresh(false)
+
+  FileView {
+    id: fileView
+    path: root.recordPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyRecord(text())
+    onFileChanged: reload()
+    onLoadFailed: root.record = null
+  }
 
   Timer {
     interval: root.pollMs
@@ -147,14 +153,14 @@ BarWidget {
       onStreamFinished: root.applyRecord(text)
     }
     onExited: function(code) {
-      if (code === 0) return
       root.busy = false
-      root.errorText = "Muse collector failed (exit " + code + ")"
+      fileView.reload()
+      if (code !== 0) root.errorText = "Codex usage update failed (exit " + code + ")"
     }
   }
 
   // The shell's module row has no spacing, so each pill leaves its own gap.
-  readonly property real pillGap: Style.spaceReal(4)
+  readonly property real pillGap: Style.spaceReal(2)
 
   implicitWidth: button.implicitWidth + pillGap
   implicitHeight: button.implicitHeight
@@ -171,12 +177,21 @@ BarWidget {
     }
   }
 
-  // Blue background: this one takes white text, since dark text would be hard to read on it.
+  // Light floating chip: thin, borderless, half-transparent accent. It never
+  // fills the bar height; the button keeps the full slot as its click area.
+  readonly property real chipHeight: Math.max(12, height - Style.spaceReal(10))
+  readonly property color softAccent: {
+    var c = Qt.lighter(root.accentColor, 1.35)
+    return Qt.rgba(c.r, c.g, c.b, 1.0)
+  }
+
   Rectangle {
-    anchors.fill: parent
-    anchors.rightMargin: root.pillGap
-    color: "#0071f1"
-    radius: 6
+    width: parent.width - root.pillGap
+    height: root.chipHeight
+    anchors.centerIn: parent
+    visible: !root.vertical
+    radius: height / 2
+    color: Qt.rgba(root.softAccent.r, root.softAccent.g, root.softAccent.b, 0.15)
   }
 
   WidgetButton {
@@ -186,9 +201,10 @@ BarWidget {
     bar: root.bar
     text: root.vertical ? "" : root.barText()
     tooltipText: root.tooltipText()
-    foreground: "#ffffff"
-    horizontalMargin: 8.75
-    verticalPadding: 8.75
+    foreground: root.softAccent
+    fontSize: Style.font.bodySmall
+    horizontalMargin: 7
+    verticalPadding: 6
     onPressed: function(b) {
       if (b === Qt.RightButton) root.refresh(true)
       else root.togglePanel()

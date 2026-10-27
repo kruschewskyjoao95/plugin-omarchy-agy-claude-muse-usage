@@ -3,7 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-// Popup opened by clicking the Muse bar label: a 5-hour bar and a 7-day bar,
+// Popup opened by clicking the Codex bar label: a 5-hour bar and a 7-day bar,
 // each with the percent used and the time left until that window resets.
 // The numbers live on the bar widget (hostWidget); this panel only renders them.
 Panel {
@@ -53,8 +53,8 @@ Panel {
         spacing: Style.space(16)
 
         PanelHero {
-          title: "Muse"
-          meta: "Assinatura do Muse"
+          title: "Codex"
+          meta: "Uso do Codex"
           foreground: root.contentForeground
           fontFamily: root.contentFontFamily
         }

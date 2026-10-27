@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "kruschewskyjoao95.muse-usage",
-  "name": "Muse Usage",
+  "name": "Codex Usage",
   "version": "1.0.0",
   "author": "kruschewskyjoao95",
   "license": "MIT",
-  "description": "Muse Code subscription usage in the Omarchy bar: the 5-hour window and the weekly allowance, with reset times on hover.",
+  "description": "Codex subscription usage in the Omarchy bar: the 5-hour window and weekly allowance, with reset times on hover.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,8 +14,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Muse Usage",
-    "description": "Shows Muse 5-hour and weekly subscription usage with reset times.",
+    "displayName": "Codex Usage",
+    "description": "Shows Codex 5-hour and weekly subscription usage with reset times.",
     "category": "AI",
     "allowMultiple": false,
     "defaultSection": "right"

@@ -1,4 +1,4 @@
-# Plugins de uso para Omarchy — Antigravity, Argon, Claude e Muse
+# Plugins de uso para Omarchy — Antigravity, Argon, Claude e Codex
 
 Quatro widgets de barra do [Omarchy](https://omarchy.org/) que mostram o uso
 das assinaturas de IA: janela de 5 horas e cota semanal, com tempos de reset.
@@ -8,7 +8,7 @@ das assinaturas de IA: janela de 5 horas e cota semanal, com tempos de reset.
 | `kruschewskyjoao95.antigravity-usage-bar` | Antigravity Usage Bar | `Antigravity <5h %> \| <dias p/ reset semanal> <semanal %>` |
 | `kruschewskyjoao95.argon-usage-bar` | Argon Usage Bar | `Argon <dias p/ reset semanal> <semanal %>` (Argon/Gemini 4 só tem janela de 7 dias) |
 | `kruschewskyjoao95.claude-usage-bar` | Claude Usage Bar | `Claude <5h %> \| <dias p/ reset semanal> <semanal %>` |
-| `kruschewskyjoao95.muse-usage` | Muse Usage | `Muse <5h %> \| <dias p/ reset semanal> <semanal %>` |
+| `kruschewskyjoao95.muse-usage` | Codex Usage | `Codex <5h %> \| <dias p/ reset semanal> <semanal %>` |
 
 Cada pasta é um plugin completo e independente, com seu próprio `README.md`.
 
@@ -35,8 +35,8 @@ omarchy restart shell
   que lê os arquivos locais do Antigravity — instale esse plugin também.
 - **Claude**: lê `~/.local/state/omarchy/agents/usage/claude.json`, mantido
   pelo painel de agentes do Omarchy.
-- **Muse**: precisa do `muse` no `PATH`, logado (`muse login`), e de
-  Python 3. Detalhes e custos de atualização no README do plugin.
+- **Codex**: lê `~/.local/state/omarchy/agents/usage/codex.json`, mantido
+  pelo painel de agentes do Omarchy; atualiza por `omarchy-agent-usage-update`.
 
 ## Licença
 

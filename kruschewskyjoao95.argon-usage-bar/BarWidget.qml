@@ -89,9 +89,9 @@ BarWidget {
 
   function barText() {
     if (root.vertical) return ""
-    if (!root.ready) return root.busy ? " Argon ..." : " Argon --"
+    if (!root.ready) return root.busy ? "Argon ..." : "Argon --"
     var weekly = argonLimit()
-    return " Argon " + resetText(weekly ? weekly.resetsAt : "") + " " + fmtPct(weekly ? weekly.percent : null)
+    return "Argon " + resetText(weekly ? weekly.resetsAt : "") + " " + fmtPct(weekly ? weekly.percent : null)
   }
 
   function tooltipText() {
@@ -130,7 +130,7 @@ BarWidget {
   }
 
   // The shell's module row has no spacing, so each pill leaves its own gap.
-  readonly property real pillGap: Style.spaceReal(4)
+  readonly property real pillGap: Style.spaceReal(2)
 
   implicitWidth: button.implicitWidth + pillGap
   implicitHeight: button.implicitHeight
@@ -175,12 +175,21 @@ BarWidget {
     }
   }
 
-  // Background behind the label.
+  // Light floating chip: thin, borderless, half-transparent accent. It never
+  // fills the bar height; the button keeps the full slot as its click area.
+  readonly property real chipHeight: Math.max(12, height - Style.spaceReal(10))
+  readonly property color softAccent: {
+    var c = Qt.lighter(root.accentColor, 1.35)
+    return Qt.rgba(c.r, c.g, c.b, 1.0)
+  }
+
   Rectangle {
-    anchors.fill: parent
-    anchors.rightMargin: root.pillGap
-    color: "#38bdf8"
-    radius: 6
+    width: parent.width - root.pillGap
+    height: root.chipHeight
+    anchors.centerIn: parent
+    visible: !root.vertical
+    radius: height / 2
+    color: Qt.rgba(root.softAccent.r, root.softAccent.g, root.softAccent.b, 0.15)
   }
 
   WidgetButton {
@@ -190,9 +199,10 @@ BarWidget {
     bar: root.bar
     text: root.vertical ? "" : root.barText()
     tooltipText: root.tooltipText()
-    foreground: "#1f1a12"
-    horizontalMargin: 8.75
-    verticalPadding: 8.75
+    foreground: root.softAccent
+    fontSize: Style.font.bodySmall
+    horizontalMargin: 7
+    verticalPadding: 6
     onPressed: function(b) {
       if (b === Qt.RightButton) root.refresh(true)
       else root.togglePanel()
