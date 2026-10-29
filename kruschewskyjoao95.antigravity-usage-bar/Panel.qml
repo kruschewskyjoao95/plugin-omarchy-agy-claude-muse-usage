@@ -3,8 +3,8 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 
-// Popup opened by clicking the Antigravity bar label: a 5-hour bar and a 7-day
-// bar, each with the percent used and the time left until that window resets.
+// Popup opened by clicking the Antigravity bar label: a 5-hour bar and a 7-day bar,
+// each with the percent used and the time left until that window resets.
 // The numbers live on the bar widget (hostWidget); this panel only renders them.
 Panel {
   id: root
@@ -15,7 +15,7 @@ Panel {
   property var hostWidget: null
   readonly property var barIdentity: hostWidget || root
 
-  readonly property color accentColor: "#5fa88c"
+  readonly property color accentColor: "#4285f4"
   readonly property color contentForeground: bar ? bar.foreground : Color.foreground
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -54,7 +54,7 @@ Panel {
 
         PanelHero {
           title: "Antigravity"
-          meta: "Limites do Gemini"
+          meta: "Limites do Antigravity"
           foreground: root.contentForeground
           fontFamily: root.contentFontFamily
         }

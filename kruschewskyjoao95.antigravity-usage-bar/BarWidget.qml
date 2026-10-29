@@ -5,28 +5,25 @@ import qs.Commons
 import qs.Ui
 
 // Antigravity usage in the bar: "Antigravity <5h%> | <days to weekly reset> <weekly%>".
-// Runs the collector from kruschewskyjoao95's sibling plugin
-// (jesseburlamaque.antigravity-usage) every 5 minutes. It reads local files,
-// so it costs no quota.
+// Reads the record that omarchy-agent-usage-update writes for Antigravity, so
+// it costs no quota. The Omarchy agents panel keeps that record fresh; this
+// widget also asks for a refresh every 5 minutes.
 BarWidget {
   id: root
   moduleName: "kruschewskyjoao95.antigravity-usage-bar"
 
-  property var limits: []
-  property bool ready: false
+  property var record: null
   property bool busy: false
   property int nowTick: 0
 
-  readonly property string collectorPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/jesseburlamaque.antigravity-usage/bin/omarchy-agent-usage-antigravity"
+  readonly property string recordPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") || "") + "/.local/state") + "/omarchy/agents/usage/agy.json"
 
-  // The collector stores each limit as a 0-1 fraction (0.498 means 49.8%),
-  // so scale it here.
-  function limitFor(group) {
-    for (var i = 0; i < root.limits.length; i++) {
-      var entry = root.limits[i]
-      if (entry.group === group) return { percent: entry.percent * 100, resetsAt: entry.resetsAt }
-    }
-    return null
+  // The record stores each limit as a 0-1 fraction (0.08 means 8%), so scale
+  // it here; the bar and tooltip work in whole percents.
+  function limit(index) {
+    var entry = root.record && root.record.limits ? root.record.limits[index] : null
+    if (!entry) return null
+    return { percent: entry.percent * 100, resetsAt: entry.resetsAt }
   }
 
   function fmtPct(value) {
@@ -45,9 +42,9 @@ BarWidget {
   }
 
   // Percent and reset time for each window, read by the popup panel.
-  readonly property color accentColor: "#5fa88c"
-  readonly property var sessionUsage: limitFor("gemini-5h")
-  readonly property var weeklyUsage: limitFor("gemini-weekly")
+  readonly property color accentColor: "#4285f4"
+  readonly property var sessionUsage: root.limit(0)
+  readonly property var weeklyUsage: root.limit(1)
 
   // Time left until a reset, e.g. "4h 05m" or "3d 04h" (the popup shows it).
   function leftText(iso) {
@@ -82,22 +79,24 @@ BarWidget {
 
   function barText() {
     if (root.vertical) return ""
-    if (!root.ready) return root.busy ? " Agy ..." : " Agy --"
-    var session = limitFor("gemini-5h")
-    var weekly = limitFor("gemini-weekly")
-    return " Agy " + fmtPct(session ? session.percent : null)
+    if (!root.record) return root.busy ? "Agy ..." : "Agy --"
+    var session = root.limit(0)
+    var weekly = root.limit(1)
+    return "Agy " + fmtPct(session ? session.percent : null)
       + " | " + resetText(weekly ? weekly.resetsAt : "") + " " + fmtPct(weekly ? weekly.percent : null)
   }
 
   function tooltipText() {
     var lines = []
-    if (root.ready) {
-      var session = limitFor("gemini-5h")
-      var weekly = limitFor("gemini-weekly")
+    if (root.record) {
+      var session = root.limit(0)
+      var weekly = root.limit(1)
       if (session) lines.push("5-hour  " + fmtPct(session.percent) + "  resets " + resetText(session.resetsAt))
       if (weekly) lines.push("Weekly  " + fmtPct(weekly.percent) + "  resets " + resetText(weekly.resetsAt))
+      if (root.record.tierLabel) lines.push("Plan: " + root.record.tierLabel)
+      if (root.record.usageStatusText) lines.push(root.record.usageStatusText)
     } else {
-      lines.push("Agy usage not available yet")
+      lines.push("Antigravity usage not available yet")
     }
     lines.push("Right-click: refresh now")
     return lines.join("\n")
@@ -106,36 +105,40 @@ BarWidget {
   function applyRecord(raw) {
     root.busy = false
     try {
-      var parsed = JSON.parse(raw)
-      root.limits = parsed.limits || []
-      root.ready = parsed.ready !== false && root.limits.length > 0
+      root.record = JSON.parse(raw)
     } catch (error) {
-      root.ready = false
+      root.record = null
     }
   }
 
   function refresh(force) {
-    if (usageProc.running) return
+    if (updateProc.running) return
     root.busy = true
-    usageProc.command = force ? [root.collectorPath, "--force"] : [root.collectorPath]
-    usageProc.running = true
+    updateProc.command = force ? ["omarchy-agent-usage-update", "--force", "agy"] : ["omarchy-agent-usage-update", "agy"]
+    updateProc.running = true
   }
 
   // The shell's module row has no spacing, so each pill leaves its own gap.
   readonly property real pillGap: Style.spaceReal(4)
 
-  implicitWidth: button.implicitWidth + pillGap * 2
+  implicitWidth: button.implicitWidth + pillGap
   implicitHeight: button.implicitHeight
 
+  FileView {
+    id: fileView
+    path: root.recordPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyRecord(text())
+    onFileChanged: reload()
+    onLoadFailed: root.record = null
+  }
+
   Process {
-    id: usageProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.applyRecord(text)
-    }
+    id: updateProc
     onExited: function(code) {
       root.busy = false
-      if (code !== 0) root.ready = false
+      fileView.reload()
     }
   }
 
@@ -167,20 +170,20 @@ BarWidget {
     }
   }
 
-  // Background behind the label. The label is dark because the bar's own
-  // light foreground would be hard to read on this tan.
+  // Same treatment as the Antigravity bar: a colored background with a dark label.
   Rectangle {
-    anchors.fill: parent
-    anchors.leftMargin: root.pillGap
+    anchors.verticalCenter: parent.verticalCenter
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: Math.round(parent.height * 0.7)
     anchors.rightMargin: root.pillGap
-    color: "#5fa88c"
-    radius: 6
+    color: "#4285f4"
+    radius: height / 2
   }
 
   WidgetButton {
     id: button
     anchors.fill: parent
-    anchors.leftMargin: root.pillGap
     anchors.rightMargin: root.pillGap
     bar: root.bar
     text: root.vertical ? "" : root.barText()

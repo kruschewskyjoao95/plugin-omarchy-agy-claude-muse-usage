@@ -42,7 +42,7 @@ BarWidget {
   }
 
   // Percent and reset time for each window, read by the popup panel.
-  readonly property color accentColor: "#d46c4d"
+  readonly property color accentColor: "#d97757"
   readonly property var sessionUsage: root.limit(0)
   readonly property var weeklyUsage: root.limit(1)
 
@@ -79,10 +79,10 @@ BarWidget {
 
   function barText() {
     if (root.vertical) return ""
-    if (!root.record) return root.busy ? " Claude ..." : " Claude --"
+    if (!root.record) return root.busy ? "Claude ..." : "Claude --"
     var session = root.limit(0)
     var weekly = root.limit(1)
-    return " Claude " + fmtPct(session ? session.percent : null)
+    return "Claude " + fmtPct(session ? session.percent : null)
       + " | " + resetText(weekly ? weekly.resetsAt : "") + " " + fmtPct(weekly ? weekly.percent : null)
   }
 
@@ -172,10 +172,13 @@ BarWidget {
 
   // Same treatment as the Antigravity bar: a colored background with a dark label.
   Rectangle {
-    anchors.fill: parent
+    anchors.verticalCenter: parent.verticalCenter
+    anchors.left: parent.left
+    anchors.right: parent.right
+    height: Math.round(parent.height * 0.7)
     anchors.rightMargin: root.pillGap
-    color: "#d46c4d"
-    radius: 6
+    color: "#d97757"
+    radius: height / 2
   }
 
   WidgetButton {
